@@ -153,6 +153,7 @@
 
     let videoDuration = 0;
     let objectUrl = null;
+    let baseName = 'output';
 
     if (typeof GIF === 'undefined') {
       statusEl.textContent = 'Не удалось загрузить библиотеку gif.js';
@@ -163,6 +164,8 @@
       if (!file) return;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       objectUrl = URL.createObjectURL(file);
+
+      baseName = file.name.replace(/\.[^/.]+$/, '') || 'output';
 
       video.src = objectUrl;
       video.onloadedmetadata = () => {
@@ -235,6 +238,7 @@
         const url = URL.createObjectURL(blob);
         preview.src = url;
         download.href = url;
+        download.download = `${baseName}.gif`; 
         result.classList.remove('hidden');
         statusEl.textContent = `Готово! ${(blob.size / 1024).toFixed(1)} КБ`;
         progressBar.style.width = '100%';
