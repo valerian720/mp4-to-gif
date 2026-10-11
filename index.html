@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MP4 → GIF Конвертер</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 24px 16px 60px;
+    background: #0f172a;
+    color: #e2e8f0;
+  }
+  h1 { margin: 0 0 20px; font-size: 24px; }
+  .card {
+    background: #1e293b;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.25);
+  }
+  label { display: block; margin-bottom: 6px; font-size: 13px; color: #94a3b8; }
+  input[type=file], input[type=number] {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #334155;
+    background: #0f172a;
+    color: #e2e8f0;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  input[type=file]::file-selector-button {
+    background: #3b82f6; color: white; border: none;
+    padding: 6px 12px; border-radius: 6px; cursor: pointer;
+    margin-right: 10px; font-family: inherit;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  button {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    transition: background .15s;
+    font-family: inherit;
+  }
+  button:hover:not(:disabled) { background: #2563eb; }
+  button:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+  #preview { max-width: 100%; border-radius: 8px; display: block; background: #0f172a; }
+  video#video { max-width: 100%; border-radius: 8px; display: block; margin-top: 12px; }
+  #status { margin-top: 12px; font-size: 14px; color: #94a3b8; min-height: 20px; }
+  #progress {
+    width: 100%; height: 8px; background: #334155;
+    border-radius: 4px; overflow: hidden; margin-top: 10px; display: none;
+  }
+  #progressBar {
+    height: 100%; background: linear-gradient(90deg,#3b82f6,#60a5fa);
+    width: 0%; transition: width .12s linear;
+  }
+  a.download {
+    display: inline-block; margin-top: 12px;
+    color: #60a5fa; text-decoration: none; font-weight: 600;
+    padding: 10px 16px; border: 1px solid #60a5fa; border-radius: 8px;
+  }
+  a.download:hover { background: rgba(96,165,250,.12); }
+  .hidden { display: none !important; }
+  .hint { font-size: 12px; color: #64748b; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <h1>🎬 MP4 → GIF</h1>
+
+  <div class="card">
+    <label for="file">Выберите MP4 файл</label>
+    <input type="file" id="file" accept="video/mp4,video/*">
+    <video id="video" muted playsinline></video>
+  </div>
+
+  <div class="card hidden" id="settings">
+    <div class="grid">
+      <div>
+        <label for="start">Начало, сек</label>
+        <input type="number" id="start" value="0" min="0" step="0.1">
+      </div>
+      <div>
+        <label for="duration">Длительность, сек</label>
+        <input type="number" id="duration" value="3" min="0.1" step="0.1">
+      </div>
+      <div>
+        <label for="fps">FPS</label>
+        <input type="number" id="fps" value="12" min="1" max="30">
+      </div>
+      <div>
+        <label for="width">Ширина, px</label>
+        <input type="number" id="width" value="320" min="50" max="1280" step="10">
+      </div>
+      <div>
+        <label for="quality">Качество (1–20)</label>
+        <input type="number" id="quality" value="10" min="1" max="20">
+      </div>
+    </div>
+    <div class="hint">Меньше «качество» — лучше картинка, но больше файл и медленнее.</div>
+    <br>
+    <button id="convert">Конвертировать</button>
+    <div id="progress"><div id="progressBar"></div></div>
+    <div id="status"></div>
+  </div>
+
+  <div class="card hidden" id="result">
+    <label>Результат</label>
+    <img id="preview" alt="GIF preview">
+    <a id="download" class="download" download="output.gif">⬇ Скачать GIF</a>
+  </div>
+
+  <canvas id="canvas" style="display:none"></canvas>
+
+  <!-- Библиотека gif.js с CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+  <script>
+  (() => {
+    const $ = id => document.getElementById(id);
+    const fileInput  = $('file');
+    const video      = $('video');
+    const canvas     = $('canvas');
+    const ctx        = canvas.getContext('2d', { willReadFrequently: true });
+    const settings   = $('settings');
+    const result     = $('result');
+    const preview    = $('preview');
+    const download   = $('download');
+    const statusEl   = $('status');
+    const progress   = $('progress');
+    const progressBar= $('progressBar');
+    const convertBtn = $('convert');
+
+    const startEl    = $('start');
+    const durationEl = $('duration');
+    const fpsEl      = $('fps');
+    const widthEl    = $('width');
+    const qualityEl  = $('quality');
+
+    let videoDuration = 0;
+    let objectUrl = null;
+
+    if (typeof GIF === 'undefined') {
+      statusEl.textContent = 'Не удалось загрузить библиотеку gif.js';
+    }
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      objectUrl = URL.createObjectURL(file);
+
+      video.src = objectUrl;
+      video.onloadedmetadata = () => {
+        videoDuration = video.duration;
+        durationEl.max = videoDuration.toFixed(2);
+        durationEl.value = Math.min(3, videoDuration).toFixed(1);
+        startEl.max = videoDuration.toFixed(2);
+        startEl.value = 0;
+        settings.classList.remove('hidden');
+        result.classList.add('hidden');
+        statusEl.textContent =
+          `Загружено: ${video.videoWidth}×${video.videoHeight}, ${videoDuration.toFixed(2)} сек`;
+      };
+    });
+
+    // Точный переход к нужному времени и ожидание кадра
+    function seekTo(time) {
+      return new Promise(resolve => {
+        const onSeeked = () => {
+          video.removeEventListener('seeked', onSeeked);
+          // небольшая задержка, чтобы браузер успел отрисовать кадр
+          requestAnimationFrame(() => resolve());
+        };
+        video.addEventListener('seeked', onSeeked);
+        video.currentTime = Math.min(time, videoDuration - 0.001);
+      });
+    }
+
+    convertBtn.addEventListener('click', async () => {
+      if (!video.src) return;
+      if (typeof GIF === 'undefined') return;
+
+      convertBtn.disabled = true;
+      result.classList.add('hidden');
+      preview.removeAttribute('src');
+      download.removeAttribute('href');
+
+      const start = Math.max(0, Math.min(parseFloat(startEl.value) || 0, videoDuration - 0.1));
+      const rawDur = parseFloat(durationEl.value) || 3;
+      const dur  = Math.max(0.1, Math.min(rawDur, videoDuration - start));
+      const fps  = Math.max(1, Math.min(30, parseInt(fpsEl.value) || 12));
+      const outW = Math.max(50, Math.min(1280, parseInt(widthEl.value) || 320));
+      const outH = Math.round(outW * video.videoHeight / video.videoWidth);
+      const quality = Math.max(1, Math.min(20, parseInt(qualityEl.value) || 10));
+
+      canvas.width  = outW;
+      canvas.height = outH;
+
+      const frameCount = Math.max(1, Math.floor(dur * fps));
+      const delay = 1000 / fps;
+
+      progress.style.display = 'block';
+      progressBar.style.width = '0%';
+
+      const gif = new GIF({
+        workers: 2,
+        quality,
+        width: outW,
+        height: outH,
+        workerScript: 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js',
+        background: '#000',
+      });
+
+      gif.on('progress', p => {
+        progressBar.style.width = (90 + p * 10) + '%';
+        statusEl.textContent = `Кодирование GIF: ${Math.round(p * 100)}%`;
+      });
+
+      gif.on('finished', blob => {
+        const url = URL.createObjectURL(blob);
+        preview.src = url;
+        download.href = url;
+        result.classList.remove('hidden');
+        statusEl.textContent = `Готово! ${(blob.size / 1024).toFixed(1)} КБ`;
+        progressBar.style.width = '100%';
+        convertBtn.disabled = false;
+      });
+
+      try {
+        for (let i = 0; i < frameCount; i++) {
+          const t = start + i / fps;
+          await seekTo(t);
+          ctx.drawImage(video, 0, 0, outW, outH);
+          const imageData = ctx.getImageData(0, 0, outW, outH);
+          gif.addFrame(imageData, { delay });
+          progressBar.style.width = ((i + 1) / frameCount * 90) + '%';
+          statusEl.textContent = `Извлечение кадров: ${i + 1} / ${frameCount}`;
+          // отдаём поток, чтобы UI не подвисал
+          await new Promise(r => setTimeout(r, 0));
+        }
+        statusEl.textContent = 'Кодирование GIF...';
+        gif.render();
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = 'Ошибка: ' + e.message;
+        convertBtn.disabled = false;
+      }
+    });
+  })();
+  </script>
+</body>
+</html>
